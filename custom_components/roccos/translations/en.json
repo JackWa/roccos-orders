@@ -29,7 +29,13 @@
   },
   "entity": {
     "sensor": {
-      "latest_order": { "name": "Latest order" }
+      "latest_order": { "name": "Latest order" },
+      "order_count": { "name": "Order count" },
+      "last_order_total": { "name": "Last order total" },
+      "last_order_placed": { "name": "Last order placed" },
+      "total_spend": { "name": "Total spend" },
+      "most_ordered_item": { "name": "Most ordered item" },
+      "account": { "name": "Account" }
     },
     "binary_sensor": {
       "order_active": { "name": "Order active" }

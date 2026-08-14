@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -14,8 +15,12 @@ from .const import DOMAIN, SCAN_INTERVAL_ACTIVE, SCAN_INTERVAL_IDLE
 _LOGGER = logging.getLogger(__name__)
 
 
-class RoccosCoordinator(DataUpdateCoordinator[list[dict]]):
-    """Fetch order history, polling faster while an order is live."""
+class RoccosCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Fetch order history + customer record, polling faster while an order is live.
+
+    coordinator.data = {"orders": [...newest first...], "customer": {...},
+                        "item_totals": {product_name: total_quantity}}
+    """
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, client: RoccosClient) -> None:
         super().__init__(
@@ -27,9 +32,11 @@ class RoccosCoordinator(DataUpdateCoordinator[list[dict]]):
         self.entry = entry
         self.client = client
 
-    async def _async_update_data(self) -> list[dict]:
+    async def _async_update_data(self) -> dict[str, Any]:
         try:
             orders = await self.client.async_get_orders()
+            customer = await self.client.async_get_customer()
+            item_totals = await self.client.async_aggregate_items(orders)
         except RoccosAuthError as err:
             # Login/re-login failed (e.g. password changed): trigger HA's reauth flow
             # so the user is prompted to re-enter credentials.
@@ -45,12 +52,24 @@ class RoccosCoordinator(DataUpdateCoordinator[list[dict]]):
             self.update_interval = interval
             _LOGGER.debug("Rocco's poll interval -> %s", interval)
 
-        return orders
+        return {"orders": orders, "customer": customer, "item_totals": item_totals}
+
+    @property
+    def orders(self) -> list[dict]:
+        return (self.data or {}).get("orders", [])
+
+    @property
+    def customer(self) -> dict:
+        return (self.data or {}).get("customer", {})
+
+    @property
+    def item_totals(self) -> dict[str, int]:
+        return (self.data or {}).get("item_totals", {})
 
     @property
     def latest(self) -> dict | None:
-        return self.data[0] if self.data else None
+        return self.orders[0] if self.orders else None
 
     @property
     def live_orders(self) -> list[dict]:
-        return [o for o in (self.data or []) if is_live(o)]
+        return [o for o in self.orders if is_live(o)]

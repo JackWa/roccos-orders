@@ -176,8 +176,17 @@ tenant is resolved automatically from the hostname).
 
 | Entity | Type | Value |
 | --- | --- | --- |
-| `sensor.roccos_latest_order` | sensor | Status of your most recent order (`OutForDelivery`, `Completed`, `none`); attributes: total, occasion, placed time, live-order count |
+| `sensor.roccos_latest_order` | sensor | Status of your most recent order; attributes: total, occasion, placed time, live-order count, `recent_orders` (last 10) |
+| `sensor.roccos_order_count` | sensor (total) | Total orders on the account; attributes: live / completed counts |
+| `sensor.roccos_last_order_total` | sensor (monetary) | £ total of the most recent order |
+| `sensor.roccos_last_order_placed` | sensor (timestamp) | When the most recent order was placed (enables "days since") |
+| `sensor.roccos_total_spend` | sensor (monetary) | Lifetime spend — sum of every order |
+| `sensor.roccos_most_ordered_item` | sensor | Product you've ordered most (deal suffixes merged); attribute `top_items` |
+| `sensor.roccos_account` | sensor (diagnostic) | Your name; attributes: email, default delivery address, address count |
 | `binary_sensor.roccos_order_active` | binary_sensor (running) | On while any order is in progress; attributes list the live statuses/ids |
+
+The coordinator fetches your orders + customer record each poll and aggregates
+per-product totals across all baskets (each basket fetched once, then cached).
 
 The coordinator polls every 30 min when idle and every 45 s while an order is
 live. Token handling (cache, refresh, 401 self-heal) matches the CLI. Automate
@@ -216,6 +225,24 @@ python3 -m unittest discover -s tests
 ```
 
 CLI options are parsed with `argparse` — run `python3 roccos_orders.py --help`.
+
+## Terms & compliance
+
+**Terms reviewed 2026-08-14** — <https://www.roccospizza.co.uk/terms/>.
+
+The published T&Cs cover food ordering (payment, ~45-minute delivery aim, refund
+and cancellation policy) and a privacy policy (cookies, Google Analytics). As of
+that date they contain **no** clause restricting automated/programmatic access,
+scraping, reverse engineering, use of non-official clients, or API use, and set
+out no developer terms or rate limits. The privacy policy affirms a user's right
+to access their own personal data.
+
+This tool only reads **your own authenticated account's** data (orders, profile,
+addresses), never anyone else's, and places no orders — so nothing in the current
+terms appears to prohibit this personal use. It stays deliberately low-impact:
+tokens and per-order baskets are cached, and polling backs off to 30 minutes when
+idle. This is a good-faith reading, **not legal advice**; the terms can change, so
+re-check periodically and keep usage personal and low-volume.
 
 ## Notes
 
