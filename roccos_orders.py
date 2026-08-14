@@ -2,16 +2,19 @@
 """
 Scrape Rocco's Pizza (Hythe) order history via the androweb API.
 
-Gets an access token (via roccos_token.py — env/.env creds), decodes the customer
-id from it, then discovers the working orders endpoint against the live API and
-dumps the order history as JSON (default) or CSV (--csv).
+Gets an access token (via roccos_token.py — env/.env creds), reads the customer id
+from it, then calls the orders endpoint and prints the history. Run with --help for
+the full option list.
 
-Usage:
-  python3 roccos_orders.py                 # JSON to stdout
-  python3 roccos_orders.py --csv           # flat CSV to stdout
+Examples:
+  python3 roccos_orders.py                 # full history as JSON
+  python3 roccos_orders.py --latest        # most recent order, with items
+  python3 roccos_orders.py --recent 5      # the 5 most recent orders, with items
+  python3 roccos_orders.py --live          # in-progress orders only
+  python3 roccos_orders.py --only-live --csv
   ROCCOS_TOKEN=eyJ... python3 roccos_orders.py   # reuse a token you already have
 """
-import os, sys, json, csv, io, urllib.request, urllib.error, urllib.parse
+import argparse, csv, json, os, sys, urllib.error, urllib.parse, urllib.request
 import roccos_token as rt
 
 API = "https://live-androweb-api.azurewebsites.net"
@@ -56,11 +59,10 @@ def fetch_orders(token, cid):
     })
 
 
-def fetch_basket_items(token, basket_id):
-    """Return a flat list of 'Nx Name £total' lines for an order's basket
-    (standalone items + items bundled inside deals)."""
-    status, b = api_get(f"baskets/{basket_id}", token)
-    if status != 200 or not isinstance(b, dict):
+def basket_lines(basket):
+    """Flatten a basket dict into 'Nx Name £total' lines (standalone items plus
+    items bundled inside deals). Pure — no network — so it is unit-testable."""
+    if not isinstance(basket, dict):
         return []
     lines = []
 
@@ -70,10 +72,18 @@ def fetch_basket_items(token, basket_id):
                 if c.get("Narrative"):
                     lines.append(f'{c.get("Quantity", 1)}x {c["Narrative"]}'
                                  + (f'  £{c["Total"]}' if c.get("Total") else ""))
-    walk(b.get("Items"))
-    for d in b.get("Deals", []):
+    walk(basket.get("Items"))
+    for d in basket.get("Deals", []):
         walk(d.get("Items"))
     return lines
+
+
+def fetch_basket_items(token, basket_id):
+    """Fetch an order's basket and return its flattened item lines."""
+    status, basket = api_get(f"baskets/{basket_id}", token)
+    if status != 200:
+        return []
+    return basket_lines(basket)
 
 
 def summarize_orders(token, orders, heading):
@@ -117,30 +127,60 @@ def flatten(order):
     }
 
 
-def main():
-    # Token via the on-disk cache: reused until <10 min left, then re-logged in.
+def parse_args(argv=None):
+    p = argparse.ArgumentParser(
+        description="Scrape Rocco's Pizza (Hythe) order history via the androweb API.")
+    view = p.add_mutually_exclusive_group()
+    view.add_argument("--latest", action="store_true",
+                      help="summarise the single most recent order")
+    view.add_argument("--recent", type=int, metavar="N",
+                      help="summarise the N most recent orders")
+    view.add_argument("--live", action="store_true",
+                      help="summarise only in-progress orders")
+    p.add_argument("--only-live", action="store_true",
+                   help="restrict the JSON/CSV dump to in-progress orders")
+    p.add_argument("--csv", action="store_true",
+                   help="output a flat CSV table instead of JSON")
+    p.add_argument("--force", action="store_true",
+                   help="ignore the cached token and log in fresh")
+    args = p.parse_args(argv)
+    if args.recent is not None and args.recent < 1:
+        p.error("--recent needs a positive number, e.g. --recent 5")
+    return args
+
+
+def acquire_token(force):
+    """Return (token, cid, user, pw), exiting cleanly on any login failure."""
     env_token = os.environ.get("ROCCOS_TOKEN")
-    token = env_token
-    cid = os.environ.get("ROCCOS_CID")
-    user = pw = None
-    if not token:
-        here = os.path.dirname(os.path.abspath(__file__))
-        rt.load_dotenv(os.environ.get("ROCCOS_ENV", os.path.join(here, ".env")))
-        user = os.environ.get("ROCCOS_USER")
-        pw = os.environ.get("ROCCOS_PASS")
-        try:
-            token, cid = rt.get_valid_token(user, pw, force="--force" in sys.argv)
-        except Exception as err:  # noqa: BLE001 - surface a clean message, not a traceback
-            print(f"ERROR: login failed: {err}", file=sys.stderr)
-            sys.exit(3)
+    if env_token:
+        return env_token, os.environ.get("ROCCOS_CID"), None, None
+    here = os.path.dirname(os.path.abspath(__file__))
+    rt.load_dotenv(os.environ.get("ROCCOS_ENV", os.path.join(here, ".env")))
+    user = os.environ.get("ROCCOS_USER")
+    pw = os.environ.get("ROCCOS_PASS")
+    try:
+        token, cid = rt.get_valid_token(user, pw, force=force)
+    except Exception as err:  # noqa: BLE001 - clean message, not a traceback
+        print(f"ERROR: login failed: {err}", file=sys.stderr)
+        sys.exit(3)
+    return token, cid, user, pw
+
+
+def main(argv=None):
+    args = parse_args(argv)
+
+    # Token via the on-disk cache: reused until <10 min left, then re-logged in.
+    token, cid, user, pw = acquire_token(args.force)
     if not cid:
-        print("ERROR: no customer id (set ROCCOS_CID, or let login supply the id_token)", file=sys.stderr)
+        print("ERROR: no customer id (set ROCCOS_CID, or let login supply the id_token)",
+              file=sys.stderr)
         sys.exit(2)
     print(f"# customer id: {cid}", file=sys.stderr)
 
     status, data = fetch_orders(token, cid)
-    # A cached token that got revoked server-side returns 401/403: refresh once and retry.
-    if status in (401, 403) and not env_token:
+    # A cached token revoked server-side returns 401/403: refresh once and retry
+    # (only when we own the login — a caller-supplied ROCCOS_TOKEN can't be refreshed).
+    if status in (401, 403) and user is not None:
         print(f"# token rejected ({status}) — refreshing and retrying", file=sys.stderr)
         try:
             token, cid = rt.get_valid_token(user, pw, force=True)
@@ -153,46 +193,29 @@ def main():
         sys.exit(2)
 
     items = data.get("Items") if isinstance(data, dict) and "Items" in data else data
-    live_count = sum(1 for o in items if is_live(o)) if isinstance(items, list) else 0
-    print(f"# orders returned: {len(items) if isinstance(items, list) else '?'} "
-          f"({live_count} live)", file=sys.stderr)
+    if not isinstance(items, list):
+        items = []
+    items.sort(key=lambda o: o.get("CreatedTimeUtc", ""), reverse=True)
+    live_count = sum(1 for o in items if is_live(o))
+    print(f"# orders returned: {len(items)} ({live_count} live)", file=sys.stderr)
 
-    # --recent N: human summary of the N most-recent orders (by placed time)
-    if "--recent" in sys.argv and isinstance(items, list):
-        i = sys.argv.index("--recent")
-        try:
-            n = int(sys.argv[i + 1])
-        except (IndexError, ValueError):
-            print("ERROR: --recent needs a number, e.g. --recent 5", file=sys.stderr)
-            sys.exit(2)
-        recent = sorted(items, key=lambda o: o.get("CreatedTimeUtc", ""), reverse=True)[:n]
-        print(summarize_orders(token, recent, f"{len(recent)} most recent order(s):"))
-        return
-
-    # --latest: human summary of the single most-recent order (by placed time)
-    if "--latest" in sys.argv and isinstance(items, list) and items:
-        newest = max(items, key=lambda o: o.get("CreatedTimeUtc", ""))
-        print(summarize_orders(token, [newest], "Latest order:"))
-        return
-
-    # --live: human summary of in-progress orders only
-    if "--live" in sys.argv:
-        print(summarize_live(token, items if isinstance(items, list) else []))
-        return
-
-    # --only-live: restrict JSON/CSV output to in-progress orders
-    if "--only-live" in sys.argv and isinstance(items, list):
-        items = [o for o in items if is_live(o)]
-        data = items
-
-    if "--csv" in sys.argv and isinstance(items, list):
-        w = csv.DictWriter(sys.stdout, fieldnames=list(flatten(items[0] if items else {}).keys()))
-        w.writeheader()
-        for o in items:
-            w.writerow(flatten(o))
+    if args.latest:
+        print(summarize_orders(token, items[:1], "Latest order:"))
+    elif args.recent is not None:
+        print(summarize_orders(token, items[:args.recent],
+                               f"{min(args.recent, len(items))} most recent order(s):"))
+    elif args.live:
+        print(summarize_live(token, items))
     else:
-        json.dump(data, sys.stdout, indent=2, ensure_ascii=False)
-        print()
+        dump = [o for o in items if is_live(o)] if args.only_live else items
+        if args.csv:
+            writer = csv.DictWriter(sys.stdout, fieldnames=list(flatten({}).keys()))
+            writer.writeheader()
+            for order in dump:
+                writer.writerow(flatten(order))
+        else:
+            json.dump(dump, sys.stdout, indent=2, ensure_ascii=False)
+            print()
 
 
 if __name__ == "__main__":

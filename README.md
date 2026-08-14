@@ -198,6 +198,17 @@ Exit codes: `2` = bad request / missing customer id, `3` = auth failure.
   `ConfigEntryAuthFailed`: HA marks the entry as needing attention and opens the
   **reauth flow**, prompting you to re-enter the password for that account.
 
+## Development
+
+Pure helpers (order classification, CSV flattening, basket parsing, JWT decoding,
+antiforgery-field extraction, arg parsing) have no-network unit tests:
+
+```sh
+python3 -m unittest discover -s tests
+```
+
+CLI options are parsed with `argparse` — run `python3 roccos_orders.py --help`.
+
 ## Notes
 
 - Tenant is hard-coded to Rocco's Pizza – Hythe (`0ZjpsCY2NU2nEwQpsLGgqA`) in the

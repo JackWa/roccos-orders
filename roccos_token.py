@@ -88,12 +88,13 @@ def hidden_fields(html):
 
 
 def decode_jwt(tok):
+    """Return a JWT's claims, or {} for an opaque/reference token."""
     try:
         p = tok.split(".")[1]
         p += "=" * (-len(p) % 4)
         return json.loads(base64.urlsafe_b64decode(p))
     except Exception:
-        return None
+        return {}
 
 
 def get_token(user, pw):
