@@ -178,6 +178,26 @@ changing to `OutForDelivery`.
 
 > Unofficial, reverse-engineered API — for personal use with your own account.
 
+## Failure handling
+
+**CLI** — a failed login or re-login prints a clean, single-line reason to stderr
+and exits non-zero (no Python traceback):
+
+```
+ERROR: login failed: login not accepted: Invalid email or password.   # exit 3
+ERROR: re-login after 401 failed: ...                                  # exit 3
+```
+
+Exit codes: `2` = bad request / missing customer id, `3` = auth failure.
+
+**Home Assistant** — the coordinator distinguishes two failures:
+
+- API/network error (`RoccosApiError`) → `UpdateFailed`: entities go
+  *unavailable* and HA retries on the next poll.
+- Login/re-login failure (`RoccosAuthError`, e.g. you changed your password) →
+  `ConfigEntryAuthFailed`: HA marks the entry as needing attention and opens the
+  **reauth flow**, prompting you to re-enter the password for that account.
+
 ## Notes
 
 - Tenant is hard-coded to Rocco's Pizza – Hythe (`0ZjpsCY2NU2nEwQpsLGgqA`) in the

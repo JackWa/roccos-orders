@@ -9,6 +9,13 @@
           "password": "Password",
           "hostname": "Site hostname"
         }
+      },
+      "reauth_confirm": {
+        "title": "Rocco's Pizza",
+        "description": "The login for {username} stopped working. Re-enter the password.",
+        "data": {
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -16,7 +23,8 @@
       "cannot_connect": "Failed to connect to Rocco's Pizza."
     },
     "abort": {
-      "already_configured": "This account is already configured."
+      "already_configured": "This account is already configured.",
+      "reauth_successful": "Re-authentication was successful."
     }
   },
   "entity": {

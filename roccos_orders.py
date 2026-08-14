@@ -128,7 +128,11 @@ def main():
         rt.load_dotenv(os.environ.get("ROCCOS_ENV", os.path.join(here, ".env")))
         user = os.environ.get("ROCCOS_USER")
         pw = os.environ.get("ROCCOS_PASS")
-        token, cid = rt.get_valid_token(user, pw, force="--force" in sys.argv)
+        try:
+            token, cid = rt.get_valid_token(user, pw, force="--force" in sys.argv)
+        except Exception as err:  # noqa: BLE001 - surface a clean message, not a traceback
+            print(f"ERROR: login failed: {err}", file=sys.stderr)
+            sys.exit(3)
     if not cid:
         print("ERROR: no customer id (set ROCCOS_CID, or let login supply the id_token)", file=sys.stderr)
         sys.exit(2)
@@ -138,7 +142,11 @@ def main():
     # A cached token that got revoked server-side returns 401/403: refresh once and retry.
     if status in (401, 403) and not env_token:
         print(f"# token rejected ({status}) — refreshing and retrying", file=sys.stderr)
-        token, cid = rt.get_valid_token(user, pw, force=True)
+        try:
+            token, cid = rt.get_valid_token(user, pw, force=True)
+        except Exception as err:  # noqa: BLE001
+            print(f"ERROR: re-login after {status} failed: {err}", file=sys.stderr)
+            sys.exit(3)
         status, data = fetch_orders(token, cid)
     if status != 200:
         print(f"orders request failed [{status}]: {str(data)[:300]}", file=sys.stderr)

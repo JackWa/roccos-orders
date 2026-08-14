@@ -5,9 +5,10 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import RoccosApiError, RoccosClient, is_live
+from .api import RoccosApiError, RoccosAuthError, RoccosClient, is_live
 from .const import DOMAIN, SCAN_INTERVAL_ACTIVE, SCAN_INTERVAL_IDLE
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,6 +30,10 @@ class RoccosCoordinator(DataUpdateCoordinator[list[dict]]):
     async def _async_update_data(self) -> list[dict]:
         try:
             orders = await self.client.async_get_orders()
+        except RoccosAuthError as err:
+            # Login/re-login failed (e.g. password changed): trigger HA's reauth flow
+            # so the user is prompted to re-enter credentials.
+            raise ConfigEntryAuthFailed(str(err)) from err
         except RoccosApiError as err:
             raise UpdateFailed(str(err)) from err
 
