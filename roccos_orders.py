@@ -149,6 +149,18 @@ def main():
     print(f"# orders returned: {len(items) if isinstance(items, list) else '?'} "
           f"({live_count} live)", file=sys.stderr)
 
+    # --recent N: human summary of the N most-recent orders (by placed time)
+    if "--recent" in sys.argv and isinstance(items, list):
+        i = sys.argv.index("--recent")
+        try:
+            n = int(sys.argv[i + 1])
+        except (IndexError, ValueError):
+            print("ERROR: --recent needs a number, e.g. --recent 5", file=sys.stderr)
+            sys.exit(2)
+        recent = sorted(items, key=lambda o: o.get("CreatedTimeUtc", ""), reverse=True)[:n]
+        print(summarize_orders(token, recent, f"{len(recent)} most recent order(s):"))
+        return
+
     # --latest: human summary of the single most-recent order (by placed time)
     if "--latest" in sys.argv and isinstance(items, list) and items:
         newest = max(items, key=lambda o: o.get("CreatedTimeUtc", ""))

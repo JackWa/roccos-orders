@@ -31,6 +31,7 @@ cp .env.example .env      # then fill in ROCCOS_PASS
 ```sh
 python3 roccos_orders.py            # full history as JSON
 python3 roccos_orders.py --latest   # most recent order, with items
+python3 roccos_orders.py --recent 5 # the N most recent orders, with items
 python3 roccos_orders.py --live     # in-progress orders only, with items
 python3 roccos_orders.py --only-live [--csv]
 python3 roccos_orders.py --csv      # flat table (Live column flags active orders)
