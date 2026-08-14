@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Rocco's Pizza",
+        "description": "Sign in with your Rocco's Pizza account.",
+        "data": {
+          "username": "Email",
+          "password": "Password",
+          "hostname": "Site hostname"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid email or password.",
+      "cannot_connect": "Failed to connect to Rocco's Pizza."
+    },
+    "abort": {
+      "already_configured": "This account is already configured."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "latest_order": { "name": "Latest order" }
+    },
+    "binary_sensor": {
+      "order_active": { "name": "Order active" }
+    }
+  }
+}
