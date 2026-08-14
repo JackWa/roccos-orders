@@ -1,0 +1,11 @@
+# secrets & local state — never commit
+.env
+.token_cache.json
+*.tmp
+
+# scraped data
+orders.json
+*.csv
+
+__pycache__/
+*.pyc
