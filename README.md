@@ -226,6 +226,17 @@ python3 -m unittest discover -s tests
 
 CLI options are parsed with `argparse` — run `python3 roccos_orders.py --help`.
 
+**Preview the HA sensors without Home Assistant** — `tools/ha_preview.py` drives
+the real async client and prints what each entity would report:
+
+```sh
+python3 -m venv .venv && .venv/bin/pip install aiohttp
+.venv/bin/python tools/ha_preview.py
+```
+
+It reads creds from the repo-root `.env`. (The formulas mirror `sensor.py`, which
+can't be imported without Home Assistant — keep them in sync when sensors change.)
+
 ## Terms & compliance
 
 **Terms reviewed 2026-08-14** — <https://www.roccospizza.co.uk/terms/>.
