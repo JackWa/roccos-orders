@@ -97,9 +97,17 @@ class TestTokenHelpers(unittest.TestCase):
 
 
 class TestArgParsing(unittest.TestCase):
-    def test_view_modes_are_mutually_exclusive(self):
+    def test_selectors_are_mutually_exclusive(self):
         with self.assertRaises(SystemExit):
             ro.parse_args(["--latest", "--live"])
+
+    def test_formats_are_mutually_exclusive(self):
+        with self.assertRaises(SystemExit):
+            ro.parse_args(["--json", "--csv"])
+
+    def test_selector_and_format_compose(self):
+        args = ro.parse_args(["--live", "--json"])
+        self.assertTrue(args.live and args.json)
 
     def test_recent_rejects_non_positive(self):
         with self.assertRaises(SystemExit):
@@ -107,7 +115,7 @@ class TestArgParsing(unittest.TestCase):
 
     def test_defaults(self):
         args = ro.parse_args([])
-        self.assertFalse(args.latest or args.live or args.csv or args.force)
+        self.assertFalse(args.latest or args.live or args.json or args.csv or args.force)
         self.assertIsNone(args.recent)
 
 

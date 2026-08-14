@@ -6,12 +6,17 @@ Gets an access token (via roccos_token.py — env/.env creds), reads the custome
 from it, then calls the orders endpoint and prints the history. Run with --help for
 the full option list.
 
+A SELECTOR chooses which orders (--latest / --recent N / --live / default all);
+a FORMAT chooses how to print them (default human summary, or --json / --csv).
+The two compose freely.
+
 Examples:
-  python3 roccos_orders.py                 # full history as JSON
-  python3 roccos_orders.py --latest        # most recent order, with items
-  python3 roccos_orders.py --recent 5      # the 5 most recent orders, with items
-  python3 roccos_orders.py --live          # in-progress orders only
-  python3 roccos_orders.py --only-live --csv
+  python3 roccos_orders.py                 # summary of all orders
+  python3 roccos_orders.py --latest        # summary of the most recent order
+  python3 roccos_orders.py --recent 5      # summary of the 5 most recent orders
+  python3 roccos_orders.py --live          # summary of in-progress orders
+  python3 roccos_orders.py --live --json   # in-progress orders as JSON
+  python3 roccos_orders.py --csv           # all orders as a CSV table
   ROCCOS_TOKEN=eyJ... python3 roccos_orders.py   # reuse a token you already have
 """
 import argparse, csv, json, os, sys, urllib.error, urllib.parse, urllib.request
@@ -101,13 +106,6 @@ def summarize_orders(token, orders, heading):
     return "\n".join(out)
 
 
-def summarize_live(token, orders):
-    live = [o for o in orders if is_live(o)]
-    if not live:
-        return "No live orders — nothing currently in progress."
-    return summarize_orders(token, live, f"{len(live)} live order(s):")
-
-
 def flatten(order):
     """Best-effort flattening of an order record for CSV."""
     def g(*keys):
@@ -129,18 +127,20 @@ def flatten(order):
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(
-        description="Scrape Rocco's Pizza (Hythe) order history via the androweb API.")
-    view = p.add_mutually_exclusive_group()
-    view.add_argument("--latest", action="store_true",
-                      help="summarise the single most recent order")
-    view.add_argument("--recent", type=int, metavar="N",
-                      help="summarise the N most recent orders")
-    view.add_argument("--live", action="store_true",
-                      help="summarise only in-progress orders")
-    p.add_argument("--only-live", action="store_true",
-                   help="restrict the JSON/CSV dump to in-progress orders")
-    p.add_argument("--csv", action="store_true",
-                   help="output a flat CSV table instead of JSON")
+        description="Scrape Rocco's Pizza (Hythe) order history via the androweb API. "
+                    "A selector chooses which orders; a format chooses how to print them.")
+    selector = p.add_mutually_exclusive_group()
+    selector.add_argument("--latest", action="store_true",
+                          help="the single most recent order")
+    selector.add_argument("--recent", type=int, metavar="N",
+                          help="the N most recent orders")
+    selector.add_argument("--live", action="store_true",
+                          help="only in-progress orders")
+    fmt = p.add_mutually_exclusive_group()
+    fmt.add_argument("--json", action="store_true",
+                     help="output JSON (default is a human-readable summary)")
+    fmt.add_argument("--csv", action="store_true",
+                     help="output a flat CSV table")
     p.add_argument("--force", action="store_true",
                    help="ignore the cached token and log in fresh")
     args = p.parse_args(argv)
@@ -199,23 +199,31 @@ def main(argv=None):
     live_count = sum(1 for o in items if is_live(o))
     print(f"# orders returned: {len(items)} ({live_count} live)", file=sys.stderr)
 
+    # Selector: which orders, plus a heading for the summary format.
     if args.latest:
-        print(summarize_orders(token, items[:1], "Latest order:"))
+        selected, heading = items[:1], "Latest order:"
     elif args.recent is not None:
-        print(summarize_orders(token, items[:args.recent],
-                               f"{min(args.recent, len(items))} most recent order(s):"))
+        selected = items[:args.recent]
+        heading = f"{len(selected)} most recent order(s):"
     elif args.live:
-        print(summarize_live(token, items))
+        selected = [o for o in items if is_live(o)]
+        heading = f"{len(selected)} live order(s):"
     else:
-        dump = [o for o in items if is_live(o)] if args.only_live else items
-        if args.csv:
-            writer = csv.DictWriter(sys.stdout, fieldnames=list(flatten({}).keys()))
-            writer.writeheader()
-            for order in dump:
-                writer.writerow(flatten(order))
-        else:
-            json.dump(dump, sys.stdout, indent=2, ensure_ascii=False)
-            print()
+        selected, heading = items, f"{len(items)} order(s):"
+
+    # Format: how to print the selected orders.
+    if args.json:
+        json.dump(selected, sys.stdout, indent=2, ensure_ascii=False)
+        print()
+    elif args.csv:
+        writer = csv.DictWriter(sys.stdout, fieldnames=list(flatten({}).keys()))
+        writer.writeheader()
+        for order in selected:
+            writer.writerow(flatten(order))
+    elif args.live and not selected:
+        print("No live orders — nothing currently in progress.")
+    else:
+        print(summarize_orders(token, selected, heading))
 
 
 if __name__ == "__main__":

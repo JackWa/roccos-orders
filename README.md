@@ -28,14 +28,22 @@ cp .env.example .env      # then fill in ROCCOS_PASS
 
 ## Usage
 
+A **selector** chooses which orders; a **format** chooses how to print them. They
+compose freely, so every selector supports all three formats:
+
+| | summary (default) | `--json` | `--csv` |
+| --- | --- | --- | --- |
+| _(none)_ = all | `roccos_orders.py` | `--json` | `--csv` |
+| `--latest` | `--latest` | `--latest --json` | `--latest --csv` |
+| `--recent N` | `--recent 5` | `--recent 5 --json` | `--recent 5 --csv` |
+| `--live` | `--live` | `--live --json` | `--live --csv` |
+
 ```sh
-python3 roccos_orders.py            # full history as JSON
-python3 roccos_orders.py --latest   # most recent order, with items
-python3 roccos_orders.py --recent 5 # the N most recent orders, with items
-python3 roccos_orders.py --live     # in-progress orders only, with items
-python3 roccos_orders.py --only-live [--csv]
-python3 roccos_orders.py --csv      # flat table (Live column flags active orders)
+python3 roccos_orders.py            # summary of all orders (default)
+python3 roccos_orders.py --live --json   # in-progress orders as JSON
+python3 roccos_orders.py --recent 5 --csv
 python3 roccos_orders.py --force    # ignore cache, log in fresh
+python3 roccos_orders.py --help     # full option list
 
 python3 roccos_token.py             # print an access token (uses/updates cache)
 python3 roccos_token.py --status    # cache state, no network call
