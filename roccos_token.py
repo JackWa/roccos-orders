@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Generate an OAuth access token for the Rocco's Pizza (Hythe) customer site by
-scripting the IdentityServer implicit-flow login.
+Generate an OAuth access token for a Rocco's Pizza storefront (set by
+ROCCOS_HOSTNAME) by scripting the IdentityServer implicit-flow login.
 
 Flow (identity-first, single URL, two POSTs):
   1. GET /connect/authorize  -> 302 -> /Account/Login (antiforgery cookie + hidden token)
@@ -17,16 +17,34 @@ import os, sys, re, json, time, base64, secrets, getpass
 import urllib.parse, urllib.request
 from http.cookiejar import CookieJar
 
-# Where the token is stashed between runs (next to this script; override with ROCCOS_CACHE).
-CACHE_PATH = os.environ.get(
-    "ROCCOS_CACHE", os.path.join(os.path.dirname(os.path.abspath(__file__)), ".token_cache.json"))
 REFRESH_MARGIN = 600  # regenerate when fewer than this many seconds remain (10 min)
 
-IDENTITY = "https://hythe-identity.roccospizza.co.uk"
 CLIENT_ID = "androweb-website"
-REDIRECT_URI = "https://hythe.roccospizza.co.uk/authComplete"
 SCOPE = "openid customers.read customers.write orders.read orders.write identity.read"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+
+NO_HOSTNAME = ("no storefront hostname — set ROCCOS_HOSTNAME (e.g. in .env) or pass --site, "
+               "e.g. hythe.roccospizza.co.uk")
+
+
+def resolve_hostname(hostname=None):
+    """The storefront hostname from an explicit arg or $ROCCOS_HOSTNAME. No default —
+    returns None if neither is set (callers must handle that)."""
+    return hostname or os.environ.get("ROCCOS_HOSTNAME")
+
+
+def identity_url(hostname):
+    """hythe.roccospizza.co.uk -> https://hythe-identity.roccospizza.co.uk"""
+    first, _, rest = hostname.partition(".")
+    return f"https://{first}-identity.{rest}"
+
+
+def cache_path(hostname):
+    """Per-location token cache (override with $ROCCOS_CACHE)."""
+    if os.environ.get("ROCCOS_CACHE"):
+        return os.environ["ROCCOS_CACHE"]
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(here, f".token_cache.{hostname.split('.')[0]}.json")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -97,13 +115,16 @@ def decode_jwt(tok):
         return {}
 
 
-def get_token(user, pw):
+def get_token(user, pw, hostname=None):
+    host = resolve_hostname(hostname)
+    if not host:
+        raise RuntimeError(NO_HOSTNAME)
     op = build_opener()
     st = secrets.token_urlsafe(24)
     nn = secrets.token_urlsafe(24)
-    authorize = f"{IDENTITY}/connect/authorize?" + urllib.parse.urlencode({
+    authorize = f"{identity_url(host)}/connect/authorize?" + urllib.parse.urlencode({
         "response_type": "id_token token", "client_id": CLIENT_ID,
-        "state": st, "redirect_uri": REDIRECT_URI, "scope": SCOPE, "nonce": nn,
+        "state": st, "redirect_uri": f"https://{host}/authComplete", "scope": SCOPE, "nonce": nn,
     }, quote_via=urllib.parse.quote)
 
     # 1) authorize -> login page
@@ -158,26 +179,26 @@ def load_dotenv(path):
         os.environ.setdefault(k, v)
 
 
-def _read_cache():
+def _read_cache(path):
     try:
-        with open(CACHE_PATH) as f:
+        with open(path) as f:
             return json.load(f)
     except (FileNotFoundError, ValueError):
         return None
 
 
-def _write_cache(frag):
+def _write_cache(frag, path):
     """Persist the token fragment plus obtained_at (epoch) and the decoded customer id."""
     entry = dict(frag)
     entry["obtained_at"] = int(time.time())
     entry["expires_in"] = int(frag.get("expires_in", 3600))
     if frag.get("id_token"):
         entry["customer_id"] = (decode_jwt(frag["id_token"]) or {}).get("sub")
-    tmp = CACHE_PATH + ".tmp"
+    tmp = path + ".tmp"
     with open(tmp, "w") as f:
         json.dump(entry, f)
-    os.chmod(tmp, 0o600)          # token on disk -> owner-only
-    os.replace(tmp, CACHE_PATH)   # atomic
+    os.chmod(tmp, 0o600)     # token on disk -> owner-only
+    os.replace(tmp, path)    # atomic
     return entry
 
 
@@ -187,21 +208,25 @@ def seconds_left(entry):
     return entry.get("obtained_at", 0) + entry.get("expires_in", 0) - int(time.time())
 
 
-def get_valid_token(user=None, pw=None, margin=REFRESH_MARGIN, force=False):
-    """Return (access_token, customer_id), reusing the cached token unless it has
-    fewer than `margin` seconds left (or --force). Regenerating requires creds."""
-    entry = _read_cache()
+def get_valid_token(user=None, pw=None, hostname=None, margin=REFRESH_MARGIN, force=False):
+    """Return (access_token, customer_id), reusing the per-location cached token
+    unless it has fewer than `margin` seconds left (or force). Regenerating needs creds."""
+    host = resolve_hostname(hostname)
+    if not host:
+        raise RuntimeError(NO_HOSTNAME)
+    path = cache_path(host)
+    entry = _read_cache(path)
     left = seconds_left(entry)
     if entry and not force and left > margin:
-        print(f"# using cached token ({left//60}m {left%60}s left)", file=sys.stderr)
+        print(f"# using cached token for {host} ({left//60}m {left%60}s left)", file=sys.stderr)
         return entry["access_token"], entry.get("customer_id")
 
     reason = "forced" if force else ("no cache" if not entry else f"{left}s left <= {margin}s")
-    print(f"# regenerating token ({reason})", file=sys.stderr)
+    print(f"# regenerating token for {host} ({reason})", file=sys.stderr)
     if not user:
         raise RuntimeError("token expired and no credentials available to regenerate")
-    frag = get_token(user, pw)
-    entry = _write_cache(frag)
+    frag = get_token(user, pw, host)
+    entry = _write_cache(frag, path)
     return entry["access_token"], entry.get("customer_id")
 
 
@@ -209,15 +234,20 @@ def main():
     # look for a .env next to this script (or ROCCOS_ENV=/path/to/.env)
     here = os.path.dirname(os.path.abspath(__file__))
     load_dotenv(os.environ.get("ROCCOS_ENV", os.path.join(here, ".env")))
+    host = resolve_hostname()
+    if not host:
+        print(f"ERROR: {NO_HOSTNAME}", file=sys.stderr)
+        sys.exit(2)
+    path = cache_path(host)
 
     # --status: report cache state without touching the network
     if "--status" in sys.argv:
-        entry = _read_cache()
+        entry = _read_cache(path)
         left = seconds_left(entry)
         if not entry:
-            print("no cached token", file=sys.stderr)
+            print(f"no cached token for {host}", file=sys.stderr)
         else:
-            print(f"cached token: {left//60}m {left%60}s left "
+            print(f"cached token for {host}: {left//60}m {left%60}s left "
                   f"({'valid' if left > REFRESH_MARGIN else 'stale — will refresh'}), "
                   f"customer {entry.get('customer_id')}", file=sys.stderr)
         return
@@ -232,7 +262,7 @@ def main():
         sys.exit(1)
 
     if "--json" in sys.argv:
-        print(json.dumps(_read_cache(), indent=2))
+        print(json.dumps(_read_cache(path), indent=2))
     else:
         print(token)
 

@@ -9,8 +9,6 @@ CONF_HOSTNAME = "hostname"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 
-DEFAULT_HOSTNAME = "hythe.roccospizza.co.uk"
-
 # OAuth / androweb constants (public client, implicit flow).
 CLIENT_ID = "androweb-website"
 SCOPE = "openid customers.read customers.write orders.read orders.write identity.read"

@@ -33,6 +33,26 @@ _LOGGER = logging.getLogger(__name__)
 # Where the androweb JSON API lives (same across all androweb storefronts).
 CONFIG_PATH = "/api/configuration"
 
+# Public page that lists every storefront, for the config-flow location dropdown.
+LOCATIONS_URL = "https://www.roccospizza.co.uk/locations/"
+BASE_DOMAIN = "roccospizza.co.uk"
+_SKIP_SUBDOMAINS = {"www", "static", "assets", "cdn", "mail", "blog"}
+
+
+async def async_discover_locations(session: aiohttp.ClientSession) -> dict[str, str]:
+    """Scrape the public locations page -> {hostname: friendly label}. Best-effort;
+    returns {} on failure so the config flow can fall back to manual entry."""
+    try:
+        async with session.get(LOCATIONS_URL, headers={"User-Agent": USER_AGENT}) as resp:
+            html = await resp.text()
+    except Exception:  # noqa: BLE001
+        return {}
+    subs = sorted(set(re.findall(rf"https?://([a-z0-9-]+)\.{re.escape(BASE_DOMAIN)}", html)))
+    return {
+        f"{s}.{BASE_DOMAIN}": s.replace("-", " ").title()
+        for s in subs if s not in _SKIP_SUBDOMAINS
+    }
+
 
 class RoccosAuthError(Exception):
     """Login failed (bad credentials, unexpected flow)."""
@@ -131,6 +151,7 @@ class RoccosClient:
 
         self._api_base: str | None = None
         self._tenant_id: str | None = None
+        self.site_name: str | None = None
         self.customer_id: str | None = None
 
         self._access_token: str | None = None
@@ -160,6 +181,7 @@ class RoccosClient:
             data = await resp.json(content_type=None)
         tenant = data[0] if isinstance(data, list) else data
         self._tenant_id = tenant["Id"]
+        self.site_name = tenant.get("Name")
 
     @property
     def _tenant_base(self) -> str:

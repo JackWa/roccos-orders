@@ -3,11 +3,11 @@
     "step": {
       "user": {
         "title": "Rocco's Pizza",
-        "description": "Sign in with your Rocco's Pizza account.",
+        "description": "Pick your Rocco's location, then sign in with that location's account. Accounts are per-location — add the integration again for each site you use.",
         "data": {
+          "hostname": "Location",
           "username": "Email",
-          "password": "Password",
-          "hostname": "Site hostname"
+          "password": "Password"
         }
       },
       "reauth_confirm": {

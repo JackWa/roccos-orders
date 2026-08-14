@@ -9,25 +9,22 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import (
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
-from .api import RoccosAuthError, RoccosClient
+from .api import RoccosAuthError, RoccosClient, async_discover_locations
 from .const import (
     CONF_HOSTNAME,
     CONF_PASSWORD,
     CONF_USERNAME,
-    DEFAULT_HOSTNAME,
     DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-STEP_USER_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_USERNAME): str,
-        vol.Required(CONF_PASSWORD): str,
-        vol.Optional(CONF_HOSTNAME, default=DEFAULT_HOSTNAME): str,
-    }
-)
 
 
 class RoccosConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -35,8 +32,30 @@ class RoccosConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def _validate(self, data: dict[str, Any]) -> tuple[str | None, dict[str, str]]:
-        """Try to log in. Returns (customer_id, errors)."""
+    async def _user_schema(self) -> vol.Schema:
+        """Location dropdown (discovered, but a custom hostname is allowed) + credentials."""
+        locations = await async_discover_locations(async_get_clientsession(self.hass))
+        if locations:
+            host_field = SelectSelector(
+                SelectSelectorConfig(
+                    options=[SelectOptionDict(value=h, label=l) for h, l in locations.items()],
+                    mode=SelectSelectorMode.DROPDOWN,
+                    custom_value=True,
+                    sort=True,
+                )
+            )
+        else:
+            host_field = str  # discovery failed -> plain hostname text field
+        return vol.Schema(
+            {
+                vol.Required(CONF_HOSTNAME): host_field,
+                vol.Required(CONF_USERNAME): str,
+                vol.Required(CONF_PASSWORD): str,
+            }
+        )
+
+    async def _validate(self, data: dict[str, Any]) -> tuple[RoccosClient | None, dict[str, str]]:
+        """Try to log in. Returns (client, errors); client carries customer_id + site_name."""
         client = RoccosClient(
             async_get_clientsession(self.hass),
             data[CONF_HOSTNAME],
@@ -50,23 +69,24 @@ class RoccosConfigFlow(ConfigFlow, domain=DOMAIN):
         except Exception:  # noqa: BLE001
             _LOGGER.exception("Unexpected error validating Rocco's login")
             return None, {"base": "cannot_connect"}
-        return client.customer_id, {}
+        return client, {}
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            customer_id, errors = await self._validate(user_input)
+            client, errors = await self._validate(user_input)
             if not errors:
-                await self.async_set_unique_id(customer_id)
+                await self.async_set_unique_id(client.customer_id)
                 self._abort_if_unique_id_configured()
+                site = client.site_name or "Rocco's"
                 return self.async_create_entry(
-                    title=f"Rocco's ({user_input[CONF_USERNAME]})",
+                    title=f"{site} ({user_input[CONF_USERNAME]})",
                     data=user_input,
                 )
         return self.async_show_form(
-            step_id="user", data_schema=STEP_USER_SCHEMA, errors=errors
+            step_id="user", data_schema=await self._user_schema(), errors=errors
         )
 
     async def async_step_reauth(
@@ -84,7 +104,7 @@ class RoccosConfigFlow(ConfigFlow, domain=DOMAIN):
             # Reauth only changes the password; the username (and therefore the
             # account) is fixed, so the login always maps to the same customer.
             data = {**reauth_entry.data, **user_input}
-            _customer_id, errors = await self._validate(data)
+            _client, errors = await self._validate(data)
             if not errors:
                 return self.async_update_reload_and_abort(reauth_entry, data=data)
         return self.async_show_form(

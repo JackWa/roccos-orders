@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Scrape Rocco's Pizza (Hythe) order history via the androweb API.
+Scrape a Rocco's Pizza storefront's order history via the androweb API.
 
 Gets an access token (via roccos_token.py — env/.env creds), reads the customer id
-from it, then calls the orders endpoint and prints the history. Run with --help for
-the full option list.
+from it, then calls the orders endpoint and prints the history. The storefront comes
+from --site or $ROCCOS_HOSTNAME (no default). Run with --help for the full options.
 
 A SELECTOR chooses which orders (--latest / --recent N / --live / default all);
 a FORMAT chooses how to print them (default human summary, or --json / --csv).
@@ -22,20 +22,36 @@ Examples:
 import argparse, csv, json, os, sys, urllib.error, urllib.parse, urllib.request
 import roccos_token as rt
 
-API = "https://live-androweb-api.azurewebsites.net"
-TENANT = "0ZjpsCY2NU2nEwQpsLGgqA"          # Rocco's Pizza - Hythe
-BASE = f"{API}/tenants/{TENANT}"
+# Resolved per run from the chosen hostname: androweb API base + tenant id.
+SITE = {"hostname": None, "api_base": None, "tenant": None, "base": None, "name": None}
+
+
+def _fetch_json(url):
+    req = urllib.request.Request(url, headers={"User-Agent": rt.UA, "Accept": "application/json"})
+    with urllib.request.urlopen(req) as r:
+        return json.loads(r.read().decode("utf-8", "replace") or "null")
+
+
+def resolve_site(hostname):
+    """Resolve a storefront's androweb API base URL and tenant id from its hostname."""
+    cfg = _fetch_json(f"https://{hostname}/api/configuration")
+    api_base = cfg["api"]["baseUrl"].rstrip("/")
+    data = _fetch_json(f"{api_base}/tenants?" + urllib.parse.urlencode({"HostName": hostname}))
+    tenant = data[0] if isinstance(data, list) else data
+    SITE.update(hostname=hostname, api_base=api_base, tenant=tenant["Id"],
+                base=f"{api_base}/tenants/{tenant['Id']}", name=tenant.get("Name"))
+    return SITE
 
 
 def api_get(path, token, params=None):
-    url = f"{BASE}/{path.lstrip('/')}"
+    url = f"{SITE['base']}/{path.lstrip('/')}"
     if params:
         url += "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
         "User-Agent": rt.UA,
-        "x-tenant-id": TENANT,
+        "x-tenant-id": SITE["tenant"],
     })
     try:
         with urllib.request.urlopen(req) as r:
@@ -127,7 +143,7 @@ def flatten(order):
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(
-        description="Scrape Rocco's Pizza (Hythe) order history via the androweb API. "
+        description="Scrape a Rocco's Pizza storefront's order history via the androweb API. "
                     "A selector chooses which orders; a format chooses how to print them.")
     selector = p.add_mutually_exclusive_group()
     selector.add_argument("--latest", action="store_true",
@@ -141,6 +157,8 @@ def parse_args(argv=None):
                      help="output JSON (default is a human-readable summary)")
     fmt.add_argument("--csv", action="store_true",
                      help="output a flat CSV table")
+    p.add_argument("--site", metavar="HOST",
+                   help="storefront hostname (default $ROCCOS_HOSTNAME or hythe.roccospizza.co.uk)")
     p.add_argument("--force", action="store_true",
                    help="ignore the cached token and log in fresh")
     args = p.parse_args(argv)
@@ -149,7 +167,7 @@ def parse_args(argv=None):
     return args
 
 
-def acquire_token(force):
+def acquire_token(hostname, force):
     """Return (token, cid, user, pw), exiting cleanly on any login failure."""
     env_token = os.environ.get("ROCCOS_TOKEN")
     if env_token:
@@ -159,7 +177,7 @@ def acquire_token(force):
     user = os.environ.get("ROCCOS_USER")
     pw = os.environ.get("ROCCOS_PASS")
     try:
-        token, cid = rt.get_valid_token(user, pw, force=force)
+        token, cid = rt.get_valid_token(user, pw, hostname=hostname, force=force)
     except Exception as err:  # noqa: BLE001 - clean message, not a traceback
         print(f"ERROR: login failed: {err}", file=sys.stderr)
         sys.exit(3)
@@ -169,8 +187,22 @@ def acquire_token(force):
 def main(argv=None):
     args = parse_args(argv)
 
-    # Token via the on-disk cache: reused until <10 min left, then re-logged in.
-    token, cid, user, pw = acquire_token(args.force)
+    # Load .env first so ROCCOS_HOSTNAME (and creds) are available, then pick the site.
+    here = os.path.dirname(os.path.abspath(__file__))
+    rt.load_dotenv(os.environ.get("ROCCOS_ENV", os.path.join(here, ".env")))
+    host = args.site or rt.resolve_hostname()
+    if not host:
+        print(f"ERROR: {rt.NO_HOSTNAME}", file=sys.stderr)
+        sys.exit(2)
+    try:
+        resolve_site(host)
+    except Exception as err:  # noqa: BLE001
+        print(f"ERROR: could not resolve site {host}: {err}", file=sys.stderr)
+        sys.exit(2)
+    print(f"# site: {SITE['name']} ({host})", file=sys.stderr)
+
+    # Token via the per-location on-disk cache: reused until <10 min left, then re-logged in.
+    token, cid, user, pw = acquire_token(host, args.force)
     if not cid:
         print("ERROR: no customer id (set ROCCOS_CID, or let login supply the id_token)",
               file=sys.stderr)

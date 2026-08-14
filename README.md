@@ -30,10 +30,13 @@ an OpenID Connect **implicit-flow** login. Two scripts:
 ## Setup
 
 ```sh
-cp .env.example .env      # then fill in ROCCOS_PASS
+cp .env.example .env      # then set ROCCOS_HOSTNAME, ROCCOS_USER, ROCCOS_PASS
 ```
 
-`.env`, `.token_cache.json`, and scraped output are gitignored.
+`ROCCOS_HOSTNAME` picks the storefront — **there is no default**, so set it in
+`.env` (or pass `--site`). Discover the options with `roccos_locations.py`.
+Accounts are per-location, so the credentials must match the chosen site. `.env`,
+`.token_cache.*.json` (one cache per location), and scraped output are gitignored.
 
 ## Usage
 
@@ -51,6 +54,7 @@ compose freely, so every selector supports all three formats:
 python3 roccos_orders.py            # summary of all orders (default)
 python3 roccos_orders.py --live --json   # in-progress orders as JSON
 python3 roccos_orders.py --recent 5 --csv
+python3 roccos_orders.py --site slough.roccospizza.co.uk   # override the location
 python3 roccos_orders.py --force    # ignore cache, log in fresh
 python3 roccos_orders.py --help     # full option list
 
@@ -177,9 +181,14 @@ as entities.
 
 **Install:** copy `custom_components/roccos/` into your HA `config/custom_components/`
 directory, restart, then **Settings → Devices & Services → Add Integration →
-Rocco's Pizza** and sign in with your email + password. The site hostname defaults
-to `hythe.roccospizza.co.uk` (change it for another Rocco's/androweb site — the
-tenant is resolved automatically from the hostname).
+Rocco's Pizza**. The setup dialog shows a **dropdown of discovered locations** —
+pick your store, then sign in with that store's email + password (you can also type
+a hostname if yours isn't listed). The tenant is resolved automatically.
+
+**Multiple locations:** add the integration **once per location** (accounts are
+per-location and don't carry across sites). Each becomes its own device named after
+the store — e.g. *Rocco's Pizza - Slough* → `sensor.roccos_pizza_slough_total_spend`
+— so several stores coexist without collisions.
 
 **Entities:**
 

@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import RoccosClient
-from .const import CONF_HOSTNAME, CONF_PASSWORD, CONF_USERNAME, DEFAULT_HOSTNAME, DOMAIN
+from .const import CONF_HOSTNAME, CONF_PASSWORD, CONF_USERNAME, DOMAIN
 from .coordinator import RoccosCoordinator
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
@@ -19,7 +19,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: RoccosConfigEntry) -> bo
     """Set up Rocco's Pizza from a config entry."""
     client = RoccosClient(
         async_get_clientsession(hass),
-        entry.data.get(CONF_HOSTNAME, DEFAULT_HOSTNAME),
+        entry.data[CONF_HOSTNAME],
         entry.data[CONF_USERNAME],
         entry.data[CONF_PASSWORD],
     )
