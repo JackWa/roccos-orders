@@ -46,6 +46,66 @@ Credentials are read from `.env` (or `ROCCOS_USER` / `ROCCOS_PASS` in the
 environment). Nothing is echoed except the token/output; the cache file is
 written `chmod 600`.
 
+## Examples
+
+Diagnostics print to stderr (the `#` lines); the data itself goes to stdout, so
+it pipes cleanly. Customer id shown as `<cust>` below.
+
+**Latest order** — `python3 roccos_orders.py --latest`
+
+```
+# using cached token (129594m 20s left)
+# customer id: <cust>
+# orders returned: 11 (0 live)
+Latest order:
+
+● Completed  —  £44.47 GBP  (Delivery)
+  placed 2026-08-14T18:30:38.7817656Z   order 9f37d600-8cb3-461a-9118-33f4fd3aa36b
+    - 1x Ben & Jerrys - Chocolate Fudge Brownie  £6.49
+    - 1x Pizza Madras (Deal: Party Pack - Medium)  £34.99
+    - 1x Texas BBQ Chicken (Deal: Party Pack - Medium)
+    - 1x Meatball Lovers (Deal: Party Pack - Medium)
+    - 1x Chicken Goujons (Deal: Party Pack - Medium)
+    - 1x Garlic Sticks (Deal: Party Pack - Medium)
+    - 1x Garlic Sticks (Deal: Party Pack - Medium)
+    - 1x Pepsi Max - 1.5L Bottle (Deal: Party Pack - Medium)
+```
+
+**Live orders** — `python3 roccos_orders.py --live` (nothing in progress)
+
+```
+# orders returned: 11 (0 live)
+No live orders — nothing currently in progress.
+```
+
+While an order is out for delivery the same command shows it with its items and a
+`● OutForDelivery — £… (Delivery)` header.
+
+**Flat table** — `python3 roccos_orders.py --csv` (stderr suppressed)
+
+```
+OrderId,PlacedUtc,Occasion,Status,Live,Total,Currency,Payment
+9f37d600-8cb3-461a-9118-33f4fd3aa36b,2026-08-14T18:30:38.7817656Z,Delivery,OutForDelivery,yes,44.47,GBP,Paid
+13aaeb80-93de-4ca7-a586-71b4acf92840,2026-06-12T18:44:57.5449728Z,Collection,Completed,,21.39,GBP,Paid
+453FC95F-7B9B-417F-9DE1-B2DD9C553B6E,2025-11-02T12:24:48.4911312Z,Collection,Completed,,73.96,GBP,Paid
+...
+```
+
+**Token status** — `python3 roccos_token.py --status` (no network call)
+
+```
+cached token: 129594m 33s left (valid), customer <cust>
+```
+
+**Self-heal** — a revoked/expired cached token triggers a single silent re-login:
+
+```
+# using cached token (...)
+# token rejected (401) — refreshing and retrying
+# regenerating token (forced)
+# orders returned: 11 (1 live)
+```
+
 ## Locations
 
 Rocco's runs several storefronts, each on its own `*.roccospizza.co.uk` subdomain.
@@ -56,6 +116,19 @@ site's API base + tenant id:
 ```sh
 python3 roccos_locations.py --table        # human-readable
 python3 roccos_locations.py -o locations.json
+```
+
+Example — `python3 roccos_locations.py --table`:
+
+```
+# discovered 6 storefront(s) on the locations page
+HOSTNAME                         TENANT ID                ENV         VERIFIED  NAME
+blackwater.roccospizza.co.uk     PQNpFadc8024LjwgTa1Flw   Production  --        Rocco's Pizza - Blackwater
+chandlers-ford.roccospizza.co.uk JPwNX3kr7EaATaNNKsA8tA   Production  --        Rocco's Pizza - Chandlers Ford
+greenford.roccospizza.co.uk      71ciAXG340Gt4WYuknpYLQ   Production  --        Rocco's Pizza - Greenford
+hythe.roccospizza.co.uk          0ZjpsCY2NU2nEwQpsLGgqA   Production  yes       Rocco's Pizza - Hythe
+ickenham.roccospizza.co.uk       V5YsuBsih0i5iDXvdws02A   Production  --        Rocco's Pizza - Ickenham
+slough.roccospizza.co.uk         IeV3leqsxkWQbsSU7HWDgQ   Production  --        Rocco's Pizza - Slough
 ```
 
 Discovered sites (as of last run):
