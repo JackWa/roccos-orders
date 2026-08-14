@@ -34,7 +34,11 @@
       "last_order_total": { "name": "Last order total" },
       "last_order_placed": { "name": "Last order placed" },
       "total_spend": { "name": "Total spend" },
+      "average_order_value": { "name": "Average order value" },
+      "total_deal_savings": { "name": "Total deal savings" },
       "most_ordered_item": { "name": "Most ordered item" },
+      "favourite_occasion": { "name": "Favourite occasion" },
+      "loyalty_points": { "name": "Loyalty points" },
       "account": { "name": "Account" }
     },
     "binary_sensor": {

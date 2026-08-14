@@ -99,6 +99,17 @@ def basket_item_counts(basket: dict) -> dict[str, int]:
     return counts
 
 
+def basket_summary(basket: dict) -> dict:
+    """Per-basket derived numbers, cached once. Pure — unit-testable."""
+    if not isinstance(basket, dict):
+        return {"items": {}, "deal_savings": 0.0, "delivery_fee": 0.0}
+    return {
+        "items": basket_item_counts(basket),
+        "deal_savings": float(basket.get("DealSavingAmount") or 0),
+        "delivery_fee": float(basket.get("DeliveryCharge") or 0),
+    }
+
+
 class RoccosClient:
     """Minimal async client: log in, cache the token, fetch orders."""
 
@@ -126,9 +137,9 @@ class RoccosClient:
         self._token_expiry: float = 0.0
         self._lock = asyncio.Lock()
 
-        # basket_id -> per-basket item counts; baskets are immutable once placed,
-        # so we fetch each at most once.
-        self._item_cache: dict[str, dict[str, int]] = {}
+        # basket_id -> basket_summary(); baskets are immutable once placed, so we
+        # fetch each at most once.
+        self._basket_cache: dict[str, dict] = {}
 
     # ---- discovery -------------------------------------------------------
 
@@ -316,20 +327,29 @@ class RoccosClient:
         except RoccosApiError:
             return {}
 
-    async def async_aggregate_items(self, orders: list[dict]) -> dict[str, int]:
-        """Total quantity per product across all orders, fetching each order's
-        basket at most once (cached by basket id)."""
-        totals: dict[str, int] = {}
+    async def async_basket_totals(self, orders: list[dict]) -> dict:
+        """Aggregate across all orders' baskets (each fetched at most once):
+        per-product quantities, lifetime deal savings, and delivery fees paid."""
+        item_totals: dict[str, int] = {}
+        deal_savings = 0.0
+        delivery_fees = 0.0
         for order in orders:
             basket_id = order.get("BasketId")
             if not basket_id:
                 continue
-            if basket_id not in self._item_cache:
+            if basket_id not in self._basket_cache:
                 try:
                     basket = await self._get(f"baskets/{basket_id}")
                 except RoccosApiError:
                     basket = {}
-                self._item_cache[basket_id] = basket_item_counts(basket)
-            for name, qty in self._item_cache[basket_id].items():
-                totals[name] = totals.get(name, 0) + qty
-        return totals
+                self._basket_cache[basket_id] = basket_summary(basket)
+            summary = self._basket_cache[basket_id]
+            for name, qty in summary["items"].items():
+                item_totals[name] = item_totals.get(name, 0) + qty
+            deal_savings += summary["deal_savings"]
+            delivery_fees += summary["delivery_fee"]
+        return {
+            "item_totals": item_totals,
+            "deal_savings": round(deal_savings, 2),
+            "delivery_fees": round(delivery_fees, 2),
+        }

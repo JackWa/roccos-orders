@@ -1,5 +1,14 @@
 # roccos-orders
 
+> ⚠️ **Unofficial, unaffiliated, and totally vibe-coded.**
+> This project is **not affiliated with, endorsed by, or supported by Rocco's Pizza**.
+> It talks to a **private, undocumented API** (reverse-engineered from the website)
+> that can change or break at any time, without notice. The whole thing — CLI,
+> Home Assistant integration, the lot — was **"vibe-coded"**: built fast and
+> conversationally with an AI assistant against the live site, with light review.
+> Treat it as a personal hack, not production software. Use it **only with your own
+> account, at your own risk.** Not legal advice; see [Terms & compliance](#terms--compliance).
+
 Scrape your own order history from the Rocco's Pizza (Hythe) customer site
 (`hythe.roccospizza.co.uk`, an Andromeda POS "androweb" storefront), including
 a live-order view. Pure Python stdlib — no dependencies.
@@ -181,7 +190,11 @@ tenant is resolved automatically from the hostname).
 | `sensor.roccos_last_order_total` | sensor (monetary) | £ total of the most recent order |
 | `sensor.roccos_last_order_placed` | sensor (timestamp) | When the most recent order was placed (enables "days since") |
 | `sensor.roccos_total_spend` | sensor (monetary) | Lifetime spend — sum of every order |
+| `sensor.roccos_average_order_value` | sensor (monetary) | Mean order value (spend ÷ order count) |
+| `sensor.roccos_total_deal_savings` | sensor (monetary) | Lifetime £ saved via deals |
 | `sensor.roccos_most_ordered_item` | sensor | Product you've ordered most (deal suffixes merged); attribute `top_items` |
+| `sensor.roccos_favourite_occasion` | sensor | Your most common occasion; attributes give the counts |
+| `sensor.roccos_loyalty_points` | sensor | Loyalty balance — **stays 0 where the scheme isn't active (e.g. Hythe)** |
 | `sensor.roccos_account` | sensor (diagnostic) | Your name; attributes: email, default delivery address, address count |
 | `binary_sensor.roccos_order_active` | binary_sensor (running) | On while any order is in progress; attributes list the live statuses/ids |
 

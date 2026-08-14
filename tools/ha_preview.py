@@ -93,11 +93,16 @@ async def main():
         orders = await client.async_get_orders()
         orders.sort(key=lambda o: o.get("CreatedTimeUtc", ""), reverse=True)
         customer = await client.async_get_customer()
-        item_totals = await client.async_aggregate_items(orders)
+        totals = await client.async_basket_totals(orders)
+        item_totals = totals["item_totals"]
 
         live = [o for o in orders if is_live(o)]
         latest = orders[0] if orders else None
         ranked = sorted(item_totals.items(), key=lambda kv: kv[1], reverse=True)
+        spend = sum(float(o.get("TotalAmount") or 0) for o in orders)
+        occ = {}
+        for o in orders:
+            occ[o.get("Occasion") or "Unknown"] = occ.get(o.get("Occasion") or "Unknown", 0) + 1
 
         print("=" * 64)
         print(f"HA SENSOR PREVIEW  ({host}, live data, no Home Assistant)")
@@ -121,19 +126,32 @@ async def main():
             placed = datetime.fromisoformat(latest["CreatedTimeUtc"].replace("Z", "+00:00"))
         show("sensor.roccos_last_order_placed", placed.isoformat() if placed else None)
 
-        show("sensor.roccos_total_spend",
-             round(sum(float(o.get("TotalAmount") or 0) for o in orders), 2), {"unit": "GBP"})
+        show("sensor.roccos_total_spend", round(spend, 2), {"unit": "GBP"})
+
+        show("sensor.roccos_average_order_value",
+             round(spend / len(orders), 2) if orders else None, {"unit": "GBP"})
+
+        show("sensor.roccos_total_deal_savings", totals["deal_savings"], {"unit": "GBP"})
 
         show("sensor.roccos_most_ordered_item", ranked[0][0] if ranked else None,
              {"quantity": ranked[0][1] if ranked else 0,
               "top_items": ", ".join(f"{n} ({q})" for n, q in ranked[:5])})
 
+        show("sensor.roccos_favourite_occasion",
+             max(occ, key=occ.get) if occ else None,
+             {k.lower(): v for k, v in occ.items()})
+
+        show("sensor.roccos_loyalty_points",
+             (customer.get("LoyaltyState") or {}).get("PointsBalance", 0),
+             {"note": "loyalty not active at Hythe"})
+
+        real = [c for c in (customer.get("Contacts") or []) if (c.get("AddressLine1") or "").strip(" -")]
         name = " ".join(p for p in (customer.get("FirstName"), customer.get("LastName")) if p)
         addr = default_address(customer)
         show("sensor.roccos_account", name or customer.get("Email"),
              {"email": customer.get("Email"),
               "default_address": format_address(addr) if addr else None,
-              "address_count": len(customer.get("Contacts") or [])})
+              "address_count": len(real)})
 
 
 if __name__ == "__main__":

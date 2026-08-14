@@ -35,16 +35,22 @@ def _compact(order: dict) -> dict:
     }
 
 
+def _real_addresses(customer: dict) -> list[dict]:
+    """Contacts that hold an actual address — excludes the blank 'add new address'
+    placeholder (AddressLine1 like '--')."""
+    return [
+        c for c in (customer.get("Contacts") or [])
+        if (c.get("AddressLine1") or "").strip(" -")
+    ]
+
+
 def _default_address(customer: dict) -> dict | None:
-    """The default contact/address, else the first with a real address line."""
-    contacts = customer.get("Contacts") or []
-    for contact in contacts:
+    """The default real address, else the first real one."""
+    real = _real_addresses(customer)
+    for contact in real:
         if contact.get("IsDefault"):
             return contact
-    for contact in contacts:
-        if (contact.get("AddressLine1") or "").strip(" -"):
-            return contact
-    return contacts[0] if contacts else None
+    return real[0] if real else None
 
 
 def _format_address(contact: dict) -> str:
@@ -70,7 +76,11 @@ async def async_setup_entry(
             RoccosLastOrderTotalSensor(coordinator),
             RoccosLastOrderPlacedSensor(coordinator),
             RoccosTotalSpendSensor(coordinator),
+            RoccosAverageOrderValueSensor(coordinator),
+            RoccosTotalDealSavingsSensor(coordinator),
             RoccosMostOrderedItemSensor(coordinator),
+            RoccosFavouriteOccasionSensor(coordinator),
+            RoccosLoyaltyPointsSensor(coordinator),
             RoccosAccountSensor(coordinator),
         ]
     )
@@ -191,6 +201,92 @@ class RoccosTotalSpendSensor(RoccosEntity, SensorEntity):
         return round(total, 2)
 
 
+class RoccosAverageOrderValueSensor(RoccosEntity, SensorEntity):
+    """State = mean order value (lifetime spend / order count)."""
+
+    _attr_translation_key = "average_order_value"
+    _attr_icon = "mdi:cash-100"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_native_unit_of_measurement = "GBP"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_average_order_value"
+
+    @property
+    def native_value(self) -> float | None:
+        orders = self.coordinator.orders
+        if not orders:
+            return None
+        total = sum(float(o.get("TotalAmount") or 0) for o in orders)
+        return round(total / len(orders), 2)
+
+
+class RoccosTotalDealSavingsSensor(RoccosEntity, SensorEntity):
+    """State = lifetime £ saved via deals (sum of basket DealSavingAmount)."""
+
+    _attr_translation_key = "total_deal_savings"
+    _attr_icon = "mdi:tag-heart"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_native_unit_of_measurement = "GBP"
+    _attr_state_class = SensorStateClass.TOTAL
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_total_deal_savings"
+
+    @property
+    def native_value(self) -> float:
+        return self.coordinator.deal_savings
+
+
+class RoccosFavouriteOccasionSensor(RoccosEntity, SensorEntity):
+    """State = your most common occasion (Delivery / Collection)."""
+
+    _attr_translation_key = "favourite_occasion"
+    _attr_icon = "mdi:moped-outline"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_favourite_occasion"
+
+    def _counts(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for order in self.coordinator.orders:
+            occ = order.get("Occasion") or "Unknown"
+            counts[occ] = counts.get(occ, 0) + 1
+        return counts
+
+    @property
+    def native_value(self) -> str | None:
+        counts = self._counts()
+        return max(counts, key=counts.get) if counts else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {k.lower(): v for k, v in self._counts().items()}
+
+
+class RoccosLoyaltyPointsSensor(RoccosEntity, SensorEntity):
+    """State = loyalty points balance.
+
+    Note: Rocco's loyalty scheme is not active at every site (e.g. Hythe), where
+    this stays 0 — that is the API's own value, not a bug.
+    """
+
+    _attr_translation_key = "loyalty_points"
+    _attr_icon = "mdi:star-circle"
+    _attr_native_unit_of_measurement = "points"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_loyalty_points"
+
+    @property
+    def native_value(self) -> int:
+        return (self.coordinator.customer.get("LoyaltyState") or {}).get("PointsBalance", 0)
+
+
 class RoccosMostOrderedItemSensor(RoccosEntity, SensorEntity):
     """State = the product you've ordered most (by total quantity)."""
 
@@ -240,10 +336,9 @@ class RoccosAccountSensor(RoccosEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict:
         c = self.coordinator.customer
-        contacts = c.get("Contacts") or []
         default = _default_address(c)
         return {
             "email": c.get("Email"),
             "default_address": _format_address(default) if default else None,
-            "address_count": len(contacts),
+            "address_count": len(_real_addresses(c)),  # excludes the blank placeholder
         }

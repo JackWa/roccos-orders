@@ -19,7 +19,8 @@ class RoccosCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Fetch order history + customer record, polling faster while an order is live.
 
     coordinator.data = {"orders": [...newest first...], "customer": {...},
-                        "item_totals": {product_name: total_quantity}}
+                        "item_totals": {product_name: total_quantity},
+                        "deal_savings": float, "delivery_fees": float}
     """
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, client: RoccosClient) -> None:
@@ -36,7 +37,7 @@ class RoccosCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             orders = await self.client.async_get_orders()
             customer = await self.client.async_get_customer()
-            item_totals = await self.client.async_aggregate_items(orders)
+            totals = await self.client.async_basket_totals(orders)
         except RoccosAuthError as err:
             # Login/re-login failed (e.g. password changed): trigger HA's reauth flow
             # so the user is prompted to re-enter credentials.
@@ -52,7 +53,7 @@ class RoccosCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.update_interval = interval
             _LOGGER.debug("Rocco's poll interval -> %s", interval)
 
-        return {"orders": orders, "customer": customer, "item_totals": item_totals}
+        return {"orders": orders, "customer": customer, **totals}
 
     @property
     def orders(self) -> list[dict]:
@@ -65,6 +66,10 @@ class RoccosCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def item_totals(self) -> dict[str, int]:
         return (self.data or {}).get("item_totals", {})
+
+    @property
+    def deal_savings(self) -> float:
+        return (self.data or {}).get("deal_savings", 0.0)
 
     @property
     def latest(self) -> dict | None:
