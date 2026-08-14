@@ -46,6 +46,39 @@ Credentials are read from `.env` (or `ROCCOS_USER` / `ROCCOS_PASS` in the
 environment). Nothing is echoed except the token/output; the cache file is
 written `chmod 600`.
 
+## Locations
+
+Rocco's runs several storefronts, each on its own `*.roccospizza.co.uk` subdomain.
+`roccos_locations.py` scrapes the public
+[locations page](https://www.roccospizza.co.uk/locations/) and resolves each
+site's API base + tenant id:
+
+```sh
+python3 roccos_locations.py --table        # human-readable
+python3 roccos_locations.py -o locations.json
+```
+
+Discovered sites (as of last run):
+
+| Hostname | Tenant id | Verified |
+| --- | --- | --- |
+| hythe.roccospizza.co.uk | `0ZjpsCY2NU2nEwQpsLGgqA` | ✅ end-to-end |
+| blackwater.roccospizza.co.uk | `PQNpFadc8024LjwgTa1Flw` | discovered only |
+| chandlers-ford.roccospizza.co.uk | `JPwNX3kr7EaATaNNKsA8tA` | discovered only |
+| greenford.roccospizza.co.uk | `71ciAXG340Gt4WYuknpYLQ` | discovered only |
+| ickenham.roccospizza.co.uk | `V5YsuBsih0i5iDXvdws02A` | discovered only |
+| slough.roccospizza.co.uk | `IeV3leqsxkWQbsSU7HWDgQ` | discovered only |
+
+> **Only Hythe is verified.** This project was built and tested solely against
+> `hythe.roccospizza.co.uk`; the other locations resolve a tenant but their login
+> flow, occasions, and deal handling are **not guaranteed to match**.
+>
+> **Accounts are per-location.** Each storefront has its own account/identity
+> system — a login (and token) does **not** carry across locations. To use another
+> site you sign in there separately. In Home Assistant that means **one config
+> entry per location**, each with its own credentials (entries dedupe by the
+> per-site customer id, so the same email at two sites is two distinct accounts).
+
 ## Home Assistant integration
 
 A custom component lives in [`custom_components/roccos/`](custom_components/roccos).
